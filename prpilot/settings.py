@@ -107,13 +107,11 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": "postgres",  # Default is 'postgres'
-            "USER": "postgres",
-            "PASSWORD": os.getenv(
-                "POSTGRES_PASSWORD"
-            ),  # Use the password obtained above
-            "HOST": "pr-pilot-db-postgresql.default.svc.cluster.local",  # Use your PostgreSQL service name
-            "PORT": "5432",
+            "NAME": os.getenv("POSTGRES_DB"),  # Default is 'postgres'
+            "USER": os.getenv("POSTGRES_USER"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD"),  # Use the password obtained above
+            "HOST": os.getenv("POSTGRES_HOST"),  # Use your PostgreSQL service name
+            "PORT": os.getenv("POSTGRES_PORT", 5432),
         }
     }
 
@@ -294,7 +292,7 @@ SPECTACULAR_SETTINGS = {
             "description": "Local development server",
         },
         {
-            "url": "https://app.pr-pilot.ai/",
+            "url": os.getenv("DJANGO_BASE_URL"),
             "description": "Production API",
         },
     ],
@@ -322,8 +320,7 @@ SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET")
 
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://helping-willing-seasnail.ngrok-free.app",
-    "https://app.pr-pilot.ai",
+    os.getenv("DJANGO_CORS_ORIGIN")
 ]
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
