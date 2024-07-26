@@ -92,6 +92,8 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "prpilot.wsgi.application"
 
+BASE_URL = os.getenv("DJANGO_BASE_URL")
+
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases

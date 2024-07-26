@@ -150,7 +150,7 @@ class TaskEngine:
                 )
                 self.project.checkout_branch(self.task.head)
                 working_branch = self.task.head
-            elif self.task.branch:
+            elif self.task.branch and not self.task.issue_number:
                 # If task is a standalone task, checkout the branch
                 working_branch = self.task.branch
                 TaskEvent.add(
@@ -221,13 +221,13 @@ class TaskEngine:
                     )
                     self.task.pr_number = pr.number
                     self.task.branch = working_branch
-            final_response += f"\n\n---\n📋 **[Log](https://app.pr-pilot.ai/dashboard/tasks/{str(self.task.id)}/)**"
-            final_response += f" ↩️ **[Undo](https://app.pr-pilot.ai/dashboard/tasks/{str(self.task.id)}/undo/)**"
+            final_response += f"\n\n---\n📋 **[Log]({settings.BASE_URL}/dashboard/tasks/{str(self.task.id)}/)**"
+            final_response += f" ↩️ **[Undo]({settings.BASE_URL}/dashboard/tasks/{str(self.task.id)}/undo/)**"
         except Exception as e:
             self.task.status = "failed"
             self.task.result = str(e)
             logger.error("Failed to run task", exc_info=e)
-            dashboard_link = f"[Your Dashboard](https://app.pr-pilot.ai/dashboard/tasks/{str(self.task.id)}/)"
+            dashboard_link = f"[Your Dashboard]({settings.BASE_URL}/dashboard/tasks/{str(self.task.id)}/)"
             final_response = f"I'm sorry, something went wrong, please check {dashboard_link} for details."
         finally:
             self.task.save()
