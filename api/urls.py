@@ -4,6 +4,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
     SpectacularRedocView,
 )
+
 from . import views
 
 urlpatterns = [

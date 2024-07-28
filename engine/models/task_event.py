@@ -5,6 +5,8 @@ from django.conf import settings
 from django.db import models
 from github import GithubException
 
+from engine.channels import broadcast
+
 logger = logging.getLogger(__name__)
 
 
@@ -104,4 +106,21 @@ class TaskEvent(models.Model):
             actor=actor, action=action, target=target, message=message, task_id=task_id
         )
         new_entry.save()
+        new_entry.broadcast()
         return new_entry
+
+    def broadcast(self):
+        broadcast(
+            str(self.task_id),
+            {
+                "type": "event",
+                "data": {
+                    "id": str(self.id),
+                    "actor": self.actor,
+                    "action": self.action,
+                    "target": self.target,
+                    "message": self.message,
+                    "timestamp": self.timestamp.isoformat(),
+                },
+            },
+        )

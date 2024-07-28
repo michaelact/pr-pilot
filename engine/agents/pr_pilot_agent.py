@@ -94,7 +94,7 @@ def delete_file(path: str):
         actor="Darwin",
         action="delete_file",
         target=path,
-        message=f"Deleting file {path}",
+        message=f"Delete file {path}",
     )
     FileSystem().delete_file(path)
     Project.commit_all_changes(f"Deleted file {path}")
@@ -111,7 +111,7 @@ def copy_file(source: str, destination: str):
         actor="Darwin",
         action="copy_file",
         target=source,
-        message=f"Copying file {source} to {destination}",
+        message=f"Copy file {source} to {destination}",
     )
     FileSystem().copy_file(source, destination)
     Project.commit_all_changes(f"Copied file {source} to {destination}")
@@ -128,7 +128,7 @@ def move_file(source: str, destination: str):
         actor="Darwin",
         action="move_file",
         target=source,
-        message=f"Moving file {source} to {destination}",
+        message=f"Move file {source} to {destination}",
     )
     FileSystem().move_file(source, destination)
     Project.commit_all_changes(f"Moved file {source} to {destination}")
@@ -146,7 +146,12 @@ def write_file(
     """
     path = path.lstrip("/")
     file_system = FileSystem()
-    TaskEvent.add(actor="assistant", action="write_file", target=path)
+    TaskEvent.add(
+        actor="assistant",
+        action="write_file",
+        target=path,
+        message=f"Write content to `{path}`",
+    )
     file_system.save(complete_entire_file_content, Path(path))
     if not commit_message:
         commit_message = f"Update {path}"
@@ -157,6 +162,12 @@ def write_file(
 @tool
 def list_directory(path: str):
     """List the contents of a directory."""
+    TaskEvent.add(
+        actor="assistant",
+        action="list_directory",
+        target=path,
+        message=f"List directory `{path}`",
+    )
     path = path.lstrip("/")
     file_system = FileSystem()
     node = file_system.get_node(Path(path))
@@ -177,12 +188,7 @@ def list_directory(path: str):
             "/"
         )
         directory_content += f"- {clipped_path}\n"
-    TaskEvent.add(
-        actor="assistant",
-        action="list_directory",
-        target=path,
-        message=directory_content,
-    )
+
     return directory_content
 
 
@@ -192,7 +198,7 @@ def read_files(file_paths: list[str]):
     if len(file_paths) > settings.MAX_READ_FILES:
         return f"Too many files ({len(file_paths)}) to read. Please limit to {settings.MAX_READ_FILES} files."
     file_system = FileSystem()
-    message = "Reading files: \n" + "\n- ".join(
+    message = "Read files: \n" + ",".join(
         f"`{file_path}`\n" for file_path in file_paths
     )
     TaskEvent.add(actor="assistant", action="read_files", message=message)
@@ -307,7 +313,7 @@ def search_github_issues(query: str, sort: Optional[str], order: Optional[str]):
         TaskEvent.add(
             actor="assistant",
             action="search_issues",
-            message=f"Searched issues with query: `{query}`. No results.",
+            message=f"Search issues with query: `{query}`. No results.",
         )
         return "No issues found"
     response = ""
@@ -317,7 +323,7 @@ def search_github_issues(query: str, sort: Optional[str], order: Optional[str]):
     TaskEvent.add(
         actor="assistant",
         action="search_issues",
-        message=f"Searched issues with query: `{query}`. Found {results.totalCount} results:\n\n{response}",
+        message=f"Search issues with query: `{query}`. Found {results.totalCount} results.",
     )
     return response
 
@@ -327,7 +333,9 @@ class PRPilotSearch(TavilySearchResults):
     def _run(
         self, query: str, run_manager: Optional[CallbackManagerForToolRun] = None
     ) -> Union[List[Dict], str]:
-        TaskEvent.add(actor="assistant", action="search", message=query)
+        TaskEvent.add(
+            actor="assistant", action="search", message=f"Search Internet for `{query}`"
+        )
         return super()._run(query, run_manager)
 
 

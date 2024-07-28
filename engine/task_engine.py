@@ -14,6 +14,7 @@ from github.PullRequest import PullRequest
 from accounts.models import UserBudget, PilotUser
 from engine.agents.integration_tools import integration_tools_for_user
 from engine.agents.pr_pilot_agent import create_pr_pilot_agent
+from engine.channels import broadcast
 from engine.langchain.generate_pr_info import generate_pr_info, LabelsAndTitle
 from engine.langchain.generate_task_title import generate_task_title
 from engine.models.cost_item import CostItem
@@ -36,13 +37,6 @@ class TaskEngine:
         os.environ["GIT_COMMIT_HOOK"] = ""
         self.task = task
         self.max_steps = max_steps
-        self.executor = create_pr_pilot_agent(
-            task.gpt_model,
-            image_support=self.task.image is not None,
-            additional_tools=integration_tools_for_user(
-                PilotUser.objects.get(username=task.github_user)
-            ),
-        )
         self.github_token = get_installation_access_token(self.task.installation_id)
         self.github = Github(self.github_token)
         self.github_repo = self.github.get_repo(self.task.github_project)
@@ -65,7 +59,9 @@ class TaskEngine:
         counter = 1
         original_branch_name = unique_branch_name
 
-        while unique_branch_name in [str(ref).replace('origin/', '') for ref in repo.refs]:
+        while unique_branch_name in [
+            str(ref).replace("origin/", "") for ref in repo.refs
+        ]:
             unique_branch_name = f"{original_branch_name}-{counter}"
             counter += 1
         return unique_branch_name
@@ -98,7 +94,12 @@ class TaskEngine:
         if self.project.get_diff_to_main():
             logger.info(f"Found changes on {branch_name!r} branch. Pushing changes ...")
             self.project.push_branch(branch_name)
-            TaskEvent.add(actor="assistant", action="push_branch", target=branch_name)
+            TaskEvent.add(
+                actor="assistant",
+                action="push_branch",
+                target=branch_name,
+                message=f"Push branch `{branch_name}`",
+            )
             self.project.checkout_latest_default_branch()
             return True
         else:
@@ -117,9 +118,17 @@ class TaskEngine:
         else:
             self.task.title = generate_task_title("", self.task.user_request)
         self.task.save()
+        broadcast(
+            str(self.task.id),
+            {
+                "type": "title_update",
+                "data": self.task.title,
+            },
+        )
 
     def run(self) -> str:
         self.task.status = "running"
+        self.broadcast_status_update("running")
         self.task.save()
         budget = UserBudget.get_user_budget(self.task.github_user)
         if budget.budget < Decimal("0.00"):
@@ -133,6 +142,7 @@ class TaskEngine:
             self.task.result = "Budget exceeded. Please add credits to your account."
             self.task.context.respond_to_user(self.task.result)
             self.task.save()
+            self.broadcast_status_update("failed", self.task.result)
             return self.task.result
         # Generate task title in the background
         task_title_thread = threading.Thread(target=self.generate_task_title)
@@ -146,7 +156,7 @@ class TaskEngine:
                     actor="assistant",
                     action="checkout_pr_branch",
                     target=self.task.head,
-                    message="Checking out PR branch",
+                    message="Check out PR branch",
                 )
                 self.project.checkout_branch(self.task.head)
                 working_branch = self.task.head
@@ -157,7 +167,7 @@ class TaskEngine:
                     actor="assistant",
                     action="checkout_branch",
                     target=self.task.branch,
-                    message=f"Checking out PR branch `{self.task.branch}`",
+                    message=f"Check out PR branch `{self.task.branch}`",
                 )
                 self.project.checkout_branch(self.task.branch)
             else:
@@ -180,7 +190,16 @@ class TaskEngine:
             date_and_time = (
                 timezone.now().isoformat() + " " + str(timezone.get_current_timezone())
             )
-            executor_result = self.executor.invoke(
+            executor = create_pr_pilot_agent(
+                self.task.gpt_model,
+                image_support=self.task.image is not None,
+                additional_tools=integration_tools_for_user(
+                    PilotUser.objects.get(username=self.task.github_user)
+                )
+                + self.project.load_pilot_behaviors(self.task, project_info),
+            )
+
+            executor_result = executor.invoke(
                 {
                     "encoded_image_url": f"data:image/png;base64,{image_base64}",
                     "user_request": self.task.user_request,
@@ -221,10 +240,12 @@ class TaskEngine:
                     )
                     self.task.pr_number = pr.number
                     self.task.branch = working_branch
-            final_response += f"\n\n---\n📋 **[Log]({settings.BASE_URL}/dashboard/tasks/{str(self.task.id)}/)**"
+            final_response += f"\n\n---\n📋 **[Log](https://app.pr-pilot.ai/dashboard/tasks/{str(self.task.id)}/)**"
             final_response += f" ↩️ **[Undo]({settings.BASE_URL}/dashboard/tasks/{str(self.task.id)}/undo/)**"
+            self.broadcast_status_update("completed", self.task.result)
         except Exception as e:
             self.task.status = "failed"
+            self.broadcast_status_update("failed")
             self.task.result = str(e)
             logger.error("Failed to run task", exc_info=e)
             dashboard_link = f"[Your Dashboard]({settings.BASE_URL}/dashboard/tasks/{str(self.task.id)}/)"
@@ -261,20 +282,41 @@ class TaskEngine:
         budget.save()
 
     def clone_github_repo(self):
-        TaskEvent.add(
-            actor="assistant",
-            action="clone_repo",
-            target=self.task.github_project,
-            message="Cloning repository",
-        )
+
         if os.path.exists(settings.REPO_DIR):
             logger.info("Deleting existing directory contents.")
             shutil.rmtree(settings.REPO_DIR)
         cache = RepoCache(self.task.github_project, self.github_token)
+        github_repo_url = f"https://github.com/{self.task.github_project}"
         if self.project.caching_enabled():
             logger.info("Caching is enabled! Setting up workspace...")
+            TaskEvent.add(
+                actor="assistant",
+                action="clone_repo",
+                target=self.task.github_project,
+                message=f"Load cached repository [{self.task.github_project}]({github_repo_url})",
+            )
             cache.setup_workspace()
         else:
             # If caching is disabled, clone it directly into the workspace
             logger.info("Caching is disabled! Cloning directly into workspace...")
+            TaskEvent.add(
+                actor="assistant",
+                action="clone_repo",
+                target=self.task.github_project,
+                message=f"Clone repository [{self.task.github_project}]({github_repo_url})",
+            )
             cache.clone(settings.REPO_DIR)
+
+    def broadcast_status_update(self, new_status: str, message: str = None):
+        """Broadcast a status update to the task's websocket channel."""
+        broadcast(
+            str(self.task.id),
+            {
+                "type": "status_update",
+                "data": {
+                    "status": new_status,
+                    "message": message,
+                },
+            },
+        )

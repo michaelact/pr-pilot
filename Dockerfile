@@ -35,5 +35,5 @@ COPY uwsgi.ini /usr/src/app/uwsgi.ini
 # Expose port 8000 for uwsgi
 EXPOSE 8000
 
-# Run uwsgi
-CMD ["/usr/src/app/entrypoint.sh"]
+# Run uvicorn
+CMD ["uvicorn", "--host", "0.0.0.0", "--port", "8000", "prpilot.asgi:application"]

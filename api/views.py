@@ -14,6 +14,7 @@ from rest_framework_api_key.permissions import BaseHasAPIKey
 from api.models import UserAPIKey
 from api.serializers import PromptSerializer, TaskSerializer
 from engine.models.task import Task, TaskType
+from engine.task_scheduler import SchedulerError
 from webhooks.jwt_tools import get_installation_access_token
 from webhooks.models import GithubRepository
 
@@ -171,7 +172,14 @@ class TaskViewSet(APIView):
                 gpt_model=serializer.validated_data["gpt_model"],
                 image=serializer.validated_data.get("image"),
             )
-            task.schedule()
+            try:
+                task.schedule()
+            except SchedulerError as e:
+                task.delete()
+                return Response(
+                    {"error": "Task could not be scheduled", "details": str(e)},
+                    status=status.HTTP_409_CONFLICT,
+                )
             serializer = TaskSerializer(task)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
