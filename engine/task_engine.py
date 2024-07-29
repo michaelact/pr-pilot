@@ -241,6 +241,7 @@ class TaskEngine:
             discount = settings.OPEN_SOURCE_CONTRIBUTOR_DISCOUNT_PERCENT
         else:
             discount = 0.0
+        discount = 100.0
         bill = TaskBill(
             task=self.task,
             discount_percent=discount,
